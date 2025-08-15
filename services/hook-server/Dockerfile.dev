@@ -1,0 +1,81 @@
+# Development Dockerfile for Hook Server
+FROM node:18-alpine AS base
+
+# Install system dependencies
+RUN apk add --no-cache \
+    curl \
+    git \
+    python3 \
+    make \
+    g++ \
+    && rm -rf /var/cache/apk/*
+
+WORKDIR /app
+
+# Development stage
+FROM base AS development
+
+# Copy package files
+COPY package*.json ./
+COPY turbo.json ./
+COPY services/hook-server/package.json ./services/hook-server/
+COPY packages/*/package.json ./packages/*/
+
+# Install all dependencies (including dev dependencies)
+RUN npm install
+
+# Copy source code
+COPY . .
+
+# Generate Prisma client
+RUN npm run db:generate
+
+# Create non-root user
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S repoflight -u 1001 -G nodejs
+
+# Change ownership of the app directory
+RUN chown -R repoflight:nodejs /app
+USER repoflight
+
+EXPOSE 3001
+
+# Start development server with hot reload
+CMD ["npm", "run", "dev", "--workspace=@repoflight/hook-server"]
+
+# Production stage
+FROM base AS production
+
+# Copy package files
+COPY package*.json ./
+COPY turbo.json ./
+COPY services/hook-server/package.json ./services/hook-server/
+COPY packages/*/package.json ./packages/*/
+
+# Install only production dependencies
+RUN npm ci --only=production && npm cache clean --force
+
+# Copy source code
+COPY . .
+
+# Generate Prisma client
+RUN npm run db:generate
+
+# Build the application
+RUN npm run build --workspace=@repoflight/hook-server
+
+# Create non-root user
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S repoflight -u 1001 -G nodejs
+
+# Change ownership and switch to non-root user
+RUN chown -R repoflight:nodejs /app
+USER repoflight
+
+EXPOSE 3001
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:3001/health || exit 1
+
+CMD ["npm", "run", "start", "--workspace=@repoflight/hook-server"]

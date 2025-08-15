@@ -1,0 +1,200 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Repository {
+  id          String   @id @default(cuid())
+  githubId    Int      @unique
+  name        String
+  owner       String
+  fullName    String   @unique // owner/name
+  defaultBranch String @default("main")
+  isPrivate   Boolean  @default(false)
+  
+  // Relationships
+  scans       Scan[]
+  policies    Policy[]
+  
+  // Metadata
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@map("repositories")
+}
+
+model Scan {
+  id           String      @id @default(cuid())
+  repositoryId String
+  commitSha    String
+  branch       String      @default("main")
+  scanType     ScanType
+  status       ScanStatus  @default(PENDING)
+  
+  // Results
+  findings     Finding[]
+  riskScore    Float?
+  
+  // Metadata
+  startedAt    DateTime    @default(now())
+  completedAt  DateTime?
+  errorMessage String?
+  
+  // Relationships
+  repository   Repository  @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  
+  @@map("scans")
+}
+
+model Finding {
+  id          String       @id @default(cuid())
+  scanId      String
+  type        FindingType
+  severity    Severity
+  title       String
+  description String
+  
+  // Location information
+  filePath    String?
+  lineNumber  Int?
+  columnNumber Int?
+  
+  // Additional data
+  metadata    Json?
+  cveId       String?
+  cvssScore   Float?
+  
+  // Status
+  status      FindingStatus @default(OPEN)
+  resolvedAt  DateTime?
+  resolvedBy  String?
+  
+  // Relationships
+  scan        Scan         @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  
+  @@map("findings")
+}
+
+model Policy {
+  id           String   @id @default(cuid())
+  repositoryId String
+  name         String
+  description  String?
+  
+  // Policy configuration
+  forbiddenLicenses String[] // Array of forbidden SPDX license IDs
+  cvssThreshold     Float    @default(7.0)
+  requiredHeaders   String[] // Required security headers
+  
+  // Custom rules
+  customRules Json?
+  
+  // Status
+  isActive    Boolean  @default(true)
+  
+  // Relationships
+  repository  Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  
+  // Metadata
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@map("policies")
+}
+
+model Remediation {
+  id          String           @id @default(cuid())
+  findingId   String           @unique
+  type        RemediationType
+  status      RemediationStatus @default(PENDING)
+  
+  // Remediation details
+  title       String
+  description String
+  changes     Json // Proposed changes
+  
+  // Pull request information
+  prNumber    Int?
+  prUrl       String?
+  
+  // Metadata
+  createdAt   DateTime @default(now())
+  appliedAt   DateTime?
+  
+  @@map("remediations")
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  action      String
+  entityType  String
+  entityId    String
+  userId      String?
+  metadata    Json?
+  
+  createdAt   DateTime @default(now())
+  
+  @@map("audit_logs")
+}
+
+// Enums
+enum ScanType {
+  LICENSE
+  SECURITY
+  CONTAINER
+  FULL
+}
+
+enum ScanStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum FindingType {
+  LICENSE_VIOLATION
+  VULNERABILITY
+  SECURITY_MISCONFIGURATION
+  DEPENDENCY_ISSUE
+  CODE_QUALITY
+}
+
+enum Severity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+  INFO
+}
+
+enum FindingStatus {
+  OPEN
+  RESOLVED
+  IGNORED
+  FALSE_POSITIVE
+}
+
+enum RemediationType {
+  DEPENDENCY_UPDATE
+  CODE_FIX
+  CONFIGURATION_CHANGE
+  LICENSE_REPLACEMENT
+}
+
+enum RemediationStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  REJECTED
+}

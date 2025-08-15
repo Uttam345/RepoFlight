@@ -1,0 +1,130 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: repoflight-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: repoflight
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_INITDB_ARGS: '--encoding=UTF-8 --lc-collate=C --lc-ctype=C'
+    ports:
+      - '5433:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./packages/database/prisma/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d repoflight']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - repoflight-network
+
+  # Redis for caching and job queues
+  redis:
+    image: redis:7-alpine
+    container_name: repoflight-redis
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - repoflight-network
+
+  # Hook Server
+  hook-server:
+    build:
+      context: .
+      dockerfile: services/hook-server/Dockerfile.dev
+      target: development
+    container_name: repoflight-hook-server
+    restart: unless-stopped
+    ports:
+      - '3001:3001'
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@postgres:5432/repoflight
+      - REDIS_URL=redis://redis:6379
+      - NODE_ENV=development
+      - PORT=3001
+      - CORS_ORIGIN=http://localhost:3000
+      - GITHUB_WEBHOOK_SECRET=${GITHUB_WEBHOOK_SECRET:-dev-webhook-secret}
+      - GITHUB_APP_ID=${GITHUB_APP_ID:-123456}
+      - LOG_LEVEL=info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./services/hook-server/src:/app/services/hook-server/src
+      - ./packages:/app/packages
+      - hook_server_node_modules:/app/node_modules
+    networks:
+      - repoflight-network
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:3001/health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Dashboard
+  dashboard:
+    build:
+      context: .
+      dockerfile: apps/dashboard/Dockerfile.dev
+      target: development
+    container_name: repoflight-dashboard
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:3001
+      - NODE_ENV=development
+      - WATCHPACK_POLLING=true
+    depends_on:
+      hook-server:
+        condition: service_healthy
+    volumes:
+      - ./apps/dashboard/src:/app/apps/dashboard/src
+      - ./apps/dashboard/public:/app/apps/dashboard/public
+      - ./packages:/app/packages
+      - dashboard_node_modules:/app/node_modules
+      - dashboard_next:/app/apps/dashboard/.next
+    networks:
+      - repoflight-network
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:3000']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  hook_server_node_modules:
+    driver: local
+  dashboard_node_modules:
+    driver: local
+  dashboard_next:
+    driver: local
+
+networks:
+  repoflight-network:
+    driver: bridge

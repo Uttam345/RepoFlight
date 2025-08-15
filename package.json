@@ -1,0 +1,47 @@
+{
+  "name": "repoflight",
+  "version": "1.0.0",
+  "description": "AI-Powered Compliance & Security Copilot with Kiro",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "services/*"
+  ],
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "type-check": "turbo run type-check",
+    "clean": "turbo run clean",
+    "db:generate": "npm run db:generate --workspace=@repoflight/database",
+    "db:push": "npm run db:push --workspace=@repoflight/database",
+    "db:migrate": "npm run db:migrate --workspace=@repoflight/database",
+    "db:studio": "npm run db:studio --workspace=@repoflight/database",
+    "docker:dev": "chmod +x scripts/docker-dev.sh && ./scripts/docker-dev.sh up",
+    "docker:dev:down": "chmod +x scripts/docker-dev.sh && ./scripts/docker-dev.sh down",
+    "docker:dev:build": "chmod +x scripts/docker-dev.sh && ./scripts/docker-dev.sh build",
+    "docker:dev:logs": "chmod +x scripts/docker-dev.sh && ./scripts/docker-dev.sh logs",
+    "docker:prod": "chmod +x scripts/docker-prod.sh && ./scripts/docker-prod.sh up",
+    "docker:prod:down": "chmod +x scripts/docker-prod.sh && ./scripts/docker-prod.sh down",
+    "docker:prod:build": "chmod +x scripts/docker-prod.sh && ./scripts/docker-prod.sh build",
+    "setup": "npm install && npm run db:generate && npm run db:push",
+    "start:dev": "node -e \"process.platform === 'win32' ? require('child_process').spawn('powershell', ['./scripts/start-dev.ps1'], {stdio: 'inherit'}) : require('child_process').spawn('bash', ['./scripts/start-dev.sh'], {stdio: 'inherit'})\""
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@typescript-eslint/eslint-plugin": "^6.13.0",
+    "@typescript-eslint/parser": "^6.13.0",
+    "eslint": "^8.54.0",
+    "eslint-config-prettier": "^9.0.0",
+    "eslint-plugin-prettier": "^5.0.1",
+    "prettier": "^3.1.0",
+    "turbo": "^1.11.0",
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}
