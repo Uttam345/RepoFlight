@@ -1,38 +1,95 @@
 import { Router } from 'express';
 import { validateRequest } from '@repoflight/shared';
 import { CreateScanSchema, UpdateScanSchema, ScanFiltersSchema, PaginationSchema } from '@repoflight/shared';
-import { ScanQueries, FindingQueries } from '@repoflight/database';
+import { ScanQueries, FindingQueries, prisma } from '@repoflight/database';
 import { NotFoundError } from '../middleware/error-handler';
 
 const router = Router();
 
 /**
+ * Get scan statistics (global)
+ */
+router.get('/stats', async (req, res) => {
+  try {
+    const [totalScans, completedScans, failedScans, pendingScans] = await Promise.all([
+      (prisma.scan as any).count(),
+      (prisma.scan as any).count({ where: { status: 'COMPLETED' } }),
+      (prisma.scan as any).count({ where: { status: 'FAILED' } }),
+      (prisma.scan as any).count({ where: { status: 'PENDING' } })
+    ]);
+
+    const stats = {
+      total: totalScans,
+      completed: completedScans,
+      failed: failedScans,
+      pending: pendingScans,
+      successRate: totalScans > 0 ? (completedScans / totalScans) * 100 : 0
+    };
+
+    res.json({
+      success: true,
+      data: stats,
+    });
+  } catch (error) {
+    console.error('Error fetching scan stats:', error);
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Failed to fetch scan statistics'
+      }
+    });
+  }
+});
+
+/**
  * Get all scans with filtering and pagination
  */
-router.get('/', 
-  validateRequest(PaginationSchema, 'query'),
-  validateRequest(ScanFiltersSchema, 'query'),
-  async (req, res) => {
-    const { page, limit, sortBy, sortOrder } = req.validated;
-    const filters = req.query;
+router.get('/', async (req, res) => {
+  const { page = 1, limit = 50 } = req.query;
+  const pageNum = parseInt(page as string);
+  const limitNum = parseInt(limit as string);
 
-    // TODO: Implement proper filtering and pagination
-    const scans = await ScanQueries.getByStatus('COMPLETED');
+  try {
+    const scans = await (prisma.scan as any).findMany({
+      take: limitNum,
+      skip: (pageNum - 1) * limitNum,
+      include: {
+        repository: true,
+        _count: {
+          select: {
+            findings: true
+          }
+        }
+      },
+      orderBy: { startedAt: 'desc' }
+    });
+
+    const total = await (prisma.scan as any).count();
 
     res.json({
       success: true,
       data: {
         scans,
         pagination: {
-          page,
-          limit,
-          total: scans.length,
-          totalPages: Math.ceil(scans.length / limit),
+          page: pageNum,
+          limit: limitNum,
+          total,
+          totalPages: Math.ceil(total / limitNum),
         },
       },
     });
+  } catch (error) {
+    console.error('Error fetching scans:', error);
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Failed to fetch scans'
+      }
+    });
   }
-);
+});
 
 /**
  * Get scan by ID
@@ -40,22 +97,21 @@ router.get('/',
 router.get('/:scanId', async (req, res) => {
   const { scanId } = req.params;
 
-  // Get scan with findings
-  const scan = await ScanQueries.getLatestForRepository(scanId);
-  
-  if (!scan) {
-    throw new NotFoundError('Scan not found');
+  try {
+    const scan = await ScanQueries.getById(scanId);
+    
+    if (!scan) {
+      throw new NotFoundError('Scan not found');
+    }
+
+    res.json({
+      success: true,
+      data: scan,
+    });
+  } catch (error) {
+    console.error('Error fetching scan:', error);
+    throw error;
   }
-
-  const findings = await FindingQueries.getByScanId(scanId);
-
-  res.json({
-    success: true,
-    data: {
-      ...scan,
-      findings,
-    },
-  });
 });
 
 /**
@@ -85,25 +141,30 @@ router.patch('/:scanId',
     const { scanId } = req.params;
     const updateData = req.validated;
 
-    // Check if scan exists
-    const existingScan = await ScanQueries.getLatestForRepository(scanId);
-    if (!existingScan) {
-      throw new NotFoundError('Scan not found');
+    try {
+      // Check if scan exists
+      const existingScan = await ScanQueries.getById(scanId);
+      if (!existingScan) {
+        throw new NotFoundError('Scan not found');
+      }
+
+      // Update scan status if provided
+      if (updateData.status) {
+        await ScanQueries.updateStatus(scanId, updateData.status, updateData.errorMessage);
+      }
+
+      // Get updated scan
+      const updatedScan = await ScanQueries.getById(scanId);
+
+      res.json({
+        success: true,
+        data: updatedScan,
+        message: 'Scan updated successfully',
+      });
+    } catch (error) {
+      console.error('Error updating scan:', error);
+      throw error;
     }
-
-    // Update scan status if provided
-    if (updateData.status) {
-      await ScanQueries.updateStatus(scanId, updateData.status, updateData.errorMessage);
-    }
-
-    // Get updated scan
-    const updatedScan = await ScanQueries.getLatestForRepository(scanId);
-
-    res.json({
-      success: true,
-      data: updatedScan,
-      message: 'Scan updated successfully',
-    });
   }
 );
 
@@ -113,18 +174,23 @@ router.patch('/:scanId',
 router.get('/:scanId/findings', async (req, res) => {
   const { scanId } = req.params;
 
-  // Check if scan exists
-  const scan = await ScanQueries.getLatestForRepository(scanId);
-  if (!scan) {
-    throw new NotFoundError('Scan not found');
+  try {
+    // Check if scan exists
+    const scan = await ScanQueries.getById(scanId);
+    if (!scan) {
+      throw new NotFoundError('Scan not found');
+    }
+
+    const findings = await FindingQueries.getByScanId(scanId);
+
+    res.json({
+      success: true,
+      data: findings,
+    });
+  } catch (error) {
+    console.error('Error fetching scan findings:', error);
+    throw error;
   }
-
-  const findings = await FindingQueries.getByScanId(scanId);
-
-  res.json({
-    success: true,
-    data: findings,
-  });
 });
 
 /**
@@ -133,41 +199,46 @@ router.get('/:scanId/findings', async (req, res) => {
 router.get('/:scanId/stats', async (req, res) => {
   const { scanId } = req.params;
 
-  // Check if scan exists
-  const scan = await ScanQueries.getLatestForRepository(scanId);
-  if (!scan) {
-    throw new NotFoundError('Scan not found');
+  try {
+    // Check if scan exists
+    const scan = await ScanQueries.getById(scanId);
+    if (!scan) {
+      throw new NotFoundError('Scan not found');
+    }
+
+    const findings = await FindingQueries.getByScanId(scanId);
+
+    // Calculate statistics
+    const stats = {
+      total: findings.length,
+      critical: findings.filter(f => f.severity === 'CRITICAL').length,
+      high: findings.filter(f => f.severity === 'HIGH').length,
+      medium: findings.filter(f => f.severity === 'MEDIUM').length,
+      low: findings.filter(f => f.severity === 'LOW').length,
+      info: findings.filter(f => f.severity === 'INFO').length,
+      byType: {
+        license: findings.filter(f => f.type === 'LICENSE_VIOLATION').length,
+        vulnerability: findings.filter(f => f.type === 'VULNERABILITY').length,
+        misconfiguration: findings.filter(f => f.type === 'SECURITY_MISCONFIGURATION').length,
+        dependency: findings.filter(f => f.type === 'DEPENDENCY_ISSUE').length,
+        quality: findings.filter(f => f.type === 'CODE_QUALITY').length,
+      },
+      byStatus: {
+        open: findings.filter(f => f.status === 'OPEN').length,
+        resolved: findings.filter(f => f.status === 'RESOLVED').length,
+        ignored: findings.filter(f => f.status === 'IGNORED').length,
+        falsePositive: findings.filter(f => f.status === 'FALSE_POSITIVE').length,
+      },
+    };
+
+    res.json({
+      success: true,
+      data: stats,
+    });
+  } catch (error) {
+    console.error('Error fetching scan stats:', error);
+    throw error;
   }
-
-  const findings = await FindingQueries.getByScanId(scanId);
-
-  // Calculate statistics
-  const stats = {
-    total: findings.length,
-    critical: findings.filter(f => f.severity === 'CRITICAL').length,
-    high: findings.filter(f => f.severity === 'HIGH').length,
-    medium: findings.filter(f => f.severity === 'MEDIUM').length,
-    low: findings.filter(f => f.severity === 'LOW').length,
-    info: findings.filter(f => f.severity === 'INFO').length,
-    byType: {
-      license: findings.filter(f => f.type === 'LICENSE_VIOLATION').length,
-      vulnerability: findings.filter(f => f.type === 'VULNERABILITY').length,
-      misconfiguration: findings.filter(f => f.type === 'SECURITY_MISCONFIGURATION').length,
-      dependency: findings.filter(f => f.type === 'DEPENDENCY_ISSUE').length,
-      quality: findings.filter(f => f.type === 'CODE_QUALITY').length,
-    },
-    byStatus: {
-      open: findings.filter(f => f.status === 'OPEN').length,
-      resolved: findings.filter(f => f.status === 'RESOLVED').length,
-      ignored: findings.filter(f => f.status === 'IGNORED').length,
-      falsePositive: findings.filter(f => f.status === 'FALSE_POSITIVE').length,
-    },
-  };
-
-  res.json({
-    success: true,
-    data: stats,
-  });
 });
 
 export { router as scanRoutes };

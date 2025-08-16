@@ -9,7 +9,7 @@ export class RepositoryQueries {
      * Find repository by GitHub ID
      */
     static async findByGithubId(githubId: number): Promise<Repository | null> {
-        return prisma.repository.findUnique({
+        return (prisma.repository as any).findUnique({
             where: { githubId },
             include: {
                 scans: {
@@ -25,7 +25,7 @@ export class RepositoryQueries {
      * Find repository by full name (owner/repo)
      */
     static async findByFullName(fullName: string): Promise<Repository | null> {
-        return prisma.repository.findUnique({
+        return (prisma.repository as any).findUnique({
             where: { fullName },
             include: {
                 scans: {
@@ -48,7 +48,7 @@ export class RepositoryQueries {
         defaultBranch?: string;
         isPrivate?: boolean;
     }): Promise<Repository> {
-        return prisma.repository.upsert({
+        return (prisma.repository as any).upsert({
             where: { githubId: data.githubId },
             update: {
                 name: data.name,
@@ -71,21 +71,44 @@ export class ScanQueries {
      * Get latest scan for repository
      */
     static async getLatestForRepository(repositoryId: string): Promise<Scan | null> {
-        return prisma.scan.findFirst({
-            where: { repositoryId },
-            orderBy: { startedAt: 'desc' },
-            include: {
-                findings: true,
-                repository: true
-            }
-        });
+        try {
+            return await (prisma.scan as any).findFirst({
+                where: { repositoryId },
+                orderBy: { startedAt: 'desc' },
+                include: {
+                    findings: true,
+                    repository: true
+                }
+            });
+        } catch (error) {
+            console.error('Error in getLatestForRepository:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Get scan by ID
+     */
+    static async getById(scanId: string): Promise<Scan | null> {
+        try {
+            return await (prisma.scan as any).findUnique({
+                where: { id: scanId },
+                include: {
+                    findings: true,
+                    repository: true
+                }
+            });
+        } catch (error) {
+            console.error('Error in getById:', error);
+            throw error;
+        }
     }
 
     /**
      * Get scans by status
      */
     static async getByStatus(status: ScanStatus): Promise<Scan[]> {
-        return prisma.scan.findMany({
+        return (prisma.scan as any).findMany({
             where: { status },
             include: {
                 repository: true,
@@ -104,7 +127,7 @@ export class ScanQueries {
         branch?: string;
         scanType: any; // ScanType enum
     }): Promise<Scan> {
-        return prisma.scan.create({
+        return (prisma.scan as any).create({
             data: {
                 ...data,
                 status: 'PENDING'
@@ -132,7 +155,7 @@ export class ScanQueries {
             updateData.errorMessage = errorMessage;
         }
 
-        return prisma.scan.update({
+        return (prisma.scan as any).update({
             where: { id: scanId },
             data: updateData
         });
@@ -147,7 +170,7 @@ export class FindingQueries {
      * Get findings by scan ID
      */
     static async getByScanId(scanId: string): Promise<Finding[]> {
-        return prisma.finding.findMany({
+        return (prisma.finding as any).findMany({
             where: { scanId },
             orderBy: [
                 { severity: 'desc' }
@@ -159,7 +182,7 @@ export class FindingQueries {
      * Get findings by repository ID
      */
     static async getByRepositoryId(repositoryId: string): Promise<Finding[]> {
-        return prisma.finding.findMany({
+        return (prisma.finding as any).findMany({
             where: {
                 scan: {
                     repositoryId
@@ -178,7 +201,7 @@ export class FindingQueries {
      * Get open findings count by repository
      */
     static async getOpenCountByRepository(repositoryId: string): Promise<number> {
-        return prisma.finding.count({
+        return (prisma.finding as any).count({
             where: {
                 scan: {
                     repositoryId
@@ -204,7 +227,7 @@ export class FindingQueries {
         cveId?: string;
         cvssScore?: number;
     }>): Promise<void> {
-        await prisma.finding.createMany({
+        await (prisma.finding as any).createMany({
             data: findings
         });
     }
@@ -226,7 +249,7 @@ export class FindingQueries {
             updateData.resolvedBy = resolvedBy;
         }
 
-        return prisma.finding.update({
+        return (prisma.finding as any).update({
             where: { id: findingId },
             data: updateData
         });
@@ -242,21 +265,21 @@ export class AnalyticsQueries {
      */
     static async getRepositoryStats(repositoryId: string) {
         const [totalScans, totalFindings, openFindings, resolvedFindings] = await Promise.all([
-            prisma.scan.count({
+            (prisma.scan as any).count({
                 where: { repositoryId }
             }),
-            prisma.finding.count({
+            (prisma.finding as any).count({
                 where: {
                     scan: { repositoryId }
                 }
             }),
-            prisma.finding.count({
+            (prisma.finding as any).count({
                 where: {
                     scan: { repositoryId },
                     status: 'OPEN'
                 }
             }),
-            prisma.finding.count({
+            (prisma.finding as any).count({
                 where: {
                     scan: { repositoryId },
                     status: 'RESOLVED'
@@ -277,7 +300,7 @@ export class AnalyticsQueries {
      * Get findings by severity for repository
      */
     static async getFindingsBySeverity(repositoryId: string) {
-        const findings = await prisma.finding.groupBy({
+        const findings = await (prisma.finding as any).groupBy({
             by: ['severity'],
             where: {
                 scan: { repositoryId },
@@ -298,7 +321,7 @@ export class AnalyticsQueries {
      * Get scan history for repository
      */
     static async getScanHistory(repositoryId: string, limit = 30) {
-        return prisma.scan.findMany({
+        return (prisma.scan as any).findMany({
             where: { repositoryId },
             orderBy: { startedAt: 'desc' },
             take: limit,

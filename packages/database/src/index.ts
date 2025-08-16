@@ -24,7 +24,7 @@ function createPrismaClient() {
 export const prisma = globalThis.__prisma || createPrismaClient();
 
 if (process.env.NODE_ENV !== 'production') {
-  globalThis.__prisma = prisma;
+  globalThis.__prisma = prisma as any;
 }
 
 // Export types
@@ -37,3 +37,4 @@ export { edgePrisma } from './edge';
 export * from './utils/risk-calculator';
 export * from './utils/compliance-mapper';
 export * from './utils/query-helpers';
+export * from './utils/connection';

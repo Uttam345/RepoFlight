@@ -232,17 +232,19 @@ export function mapToSOC2(findings: Finding[]): ComplianceMapping {
  */
 function mapFindingToOWASPControls(finding: Finding): string[] {
     const controls: string[] = [];
+    const title = finding.title.toLowerCase();
 
     switch (finding.type) {
         case 'VULNERABILITY':
-            if (finding.title.toLowerCase().includes('injection')) {
+            if (title.includes('injection') || title.includes('sql') || title.includes('xss')) {
                 controls.push('A03:2021');
             }
-            if (finding.title.toLowerCase().includes('xss')) {
-                controls.push('A03:2021');
-            }
-            if (finding.title.toLowerCase().includes('auth')) {
+            if (title.includes('auth') || title.includes('session') || title.includes('bypass')) {
                 controls.push('A07:2021');
+            }
+            // If no specific mapping, default to injection for vulnerabilities
+            if (controls.length === 0) {
+                controls.push('A03:2021');
             }
             break;
         case 'SECURITY_MISCONFIGURATION':

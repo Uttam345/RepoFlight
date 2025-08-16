@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { validateRequest } from '@repoflight/shared';
 import { CreateRepositorySchema, UpdateRepositorySchema, RepositoryFiltersSchema, PaginationSchema } from '@repoflight/shared';
-import { RepositoryQueries, AnalyticsQueries } from '@repoflight/database';
+import { RepositoryQueries, AnalyticsQueries, prisma } from '@repoflight/database';
 import { NotFoundError } from '../middleware/error-handler';
 
 const router = Router();
@@ -9,31 +9,55 @@ const router = Router();
 /**
  * Get all repositories with filtering and pagination
  */
-router.get('/',
-  validateRequest(PaginationSchema, 'query'),
-  validateRequest(RepositoryFiltersSchema, 'query'),
-  async (req, res) => {
-    const { page, limit } = req.validated;
-    const filters = req.query;
+router.get('/', async (req, res) => {
+  const { page = 1, limit = 50 } = req.query;
+  const pageNum = parseInt(page as string);
+  const limitNum = parseInt(limit as string);
 
-    // TODO: Implement proper filtering and pagination with Prisma
-    // For now, return a simple response
-    const repositories: any[] = []; // This will be implemented with proper database queries
+  try {
+    // Get repositories from database
+    const repositories = await (prisma.repository as any).findMany({
+      take: limitNum,
+      skip: (pageNum - 1) * limitNum,
+      include: {
+        scans: {
+          orderBy: { startedAt: 'desc' },
+          take: 1
+        },
+        _count: {
+          select: {
+            scans: true
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const total = await (prisma.repository as any).count();
 
     res.json({
       success: true,
       data: {
         repositories,
         pagination: {
-          page,
-          limit,
-          total: repositories.length,
-          totalPages: Math.ceil(repositories.length / limit),
+          page: pageNum,
+          limit: limitNum,
+          total,
+          totalPages: Math.ceil(total / limitNum),
         },
       },
     });
+  } catch (error) {
+    console.error('Error fetching repositories:', error);
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Failed to fetch repositories'
+      }
+    });
   }
-);
+});
 
 /**
  * Get repository by ID
@@ -183,7 +207,7 @@ router.get('/:repositoryId/policies', async (req, res) => {
 
   res.json({
     success: true,
-    data: repository.policies || [],
+    data: [], // TODO: Implement policy retrieval when policy system is implemented
   });
 });
 

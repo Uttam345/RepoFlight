@@ -13,16 +13,27 @@ export function errorHandler(
   res: Response,
   next: NextFunction
 ) {
-  // Log error
-  console.error('Error occurred:', {
-    message: error.message,
-    stack: error.stack,
-    url: req.url,
-    method: req.method,
-    body: req.body,
-    query: req.query,
-    params: req.params,
-  });
+  // Log error with correlation ID
+  const requestId = req.headers['x-request-id'] as string || 'unknown';
+  console.error(JSON.stringify({
+    level: 'error',
+    message: 'Request error',
+    error: {
+      name: error.name,
+      message: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+      code: error.code,
+    },
+    request: {
+      method: req.method,
+      url: req.url,
+      body: req.method !== 'GET' ? req.body : undefined,
+      query: req.query,
+      params: req.params,
+    },
+    requestId,
+    timestamp: new Date().toISOString(),
+  }));
 
   // Default error response
   let statusCode = error.statusCode || HttpStatus.INTERNAL_SERVER_ERROR;

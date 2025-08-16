@@ -12,6 +12,7 @@ import { scanRoutes } from './routes/scan';
 import { repositoryRoutes } from './routes/repository';
 import { findingRoutes } from './routes/finding';
 import { healthRoutes } from './routes/health';
+import { dashboardRoutes } from './routes/dashboard';
 
 // Load environment variables
 dotenv.config();
@@ -28,7 +29,7 @@ app.use(cors({
 
 // Request logging
 app.use(morgan('combined'));
-app.use(requestLogger);
+app.use(requestLogger as any);
 
 // Body parsing middleware
 app.use('/webhook', express.raw({ type: 'application/json' })); // Raw for webhook signature validation
@@ -38,6 +39,7 @@ app.use(express.urlencoded({ extended: true }));
 // Routes
 app.use('/health', healthRoutes);
 app.use('/webhook', webhookRoutes);
+app.use('/api/v1/dashboard', dashboardRoutes);
 app.use('/api/v1/scans', scanRoutes);
 app.use('/api/v1/repositories', repositoryRoutes);
 app.use('/api/v1/findings', findingRoutes);
